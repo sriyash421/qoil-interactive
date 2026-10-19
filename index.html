@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Q-OIL · Interactive Intervention Learning</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <!-- ───────── header ───────── -->
+    <header class="hero">
+      <div class="eyebrow">Interactive demo · runs live in your browser</div>
+      <h1>Q-OIL: learning from your interventions</h1>
+      <p class="lede">
+        Three intervention-learning algorithms train <em>online, from scratch</em> in
+        the maze below — the only thing baked in is the maze layout. Press
+        <span class="kbd">▲</span><span class="kbd">▼</span><span class="kbd">◀</span><span class="kbd">▶</span>
+        (or <span class="kbd">W</span><span class="kbd">A</span><span class="kbd">S</span><span class="kbd">D</span>)
+        to nudge the agent, or hit <span class="kbd">Space</span> to <strong>take full control</strong>,
+        steer it, and <span class="kbd">Space</span> again to hand control back. Watch the value function reshape in real time.
+      </p>
+    </header>
+
+    <!-- ───────── algorithm selector ───────── -->
+    <section class="algo-bar">
+      <span class="algo-label">Algorithm</span>
+      <div class="algo-group" role="tablist">
+        <button class="algo-btn" data-mode="hil">
+          <span class="name">HIL</span>
+          <span class="sub">no bonus</span>
+        </button>
+        <button class="algo-btn" data-mode="qoil_nodec">
+          <span class="name">Q-OIL</span>
+          <span class="sub">no decoupling</span>
+        </button>
+        <button class="algo-btn active" data-mode="qoil">
+          <span class="name">Q-OIL</span>
+          <span class="sub">decoupled</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ───────── panels ───────── -->
+    <section class="panels">
+      <!-- environment / rollouts -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Environment &amp; policy rollouts</h2>
+            <p class="panel-sub">The agent explores; <em>you</em> intervene with the arrow keys.</p>
+          </div>
+          <span class="interv-pill" id="intervPill">intervening</span>
+        </div>
+        <div class="canvas-frame env" >
+          <canvas id="envCanvas"></canvas>
+        </div>
+        <div class="legend">
+          <span><i class="dot policy"></i>policy</span>
+          <span><i class="dot human"></i>your intervention</span>
+          <span><i class="dot goal"></i>goal</span>
+        </div>
+      </article>
+
+      <!-- value function -->
+      <article class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>
+              Value function <span class="qsym">Q(s)</span>
+              <span class="critic-toggle" id="criticToggle">
+                <button class="critic-opt active" data-critic="opt">optimistic</button>
+                <button class="critic-opt" data-critic="task">task</button>
+              </span>
+            </h2>
+            <p class="panel-sub" id="valSubtitle">Optimistic critic — interventions add the +b bonus</p>
+          </div>
+        </div>
+        <div class="canvas-frame">
+          <canvas id="valCanvas"></canvas>
+        </div>
+        <div class="legend">
+          <span class="scale">
+            <i class="scalebar"></i> low&nbsp;→&nbsp;high value
+          </span>
+          <span><i class="dot bonus"></i>+b bonus</span>
+          <span><i class="dot opt"></i>optimal path under this Q</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- ───────── controls ───────── -->
+    <section class="controls">
+      <button id="startBtn" class="primary">
+        <span class="icon">▶</span><span class="label">Start learning</span>
+      </button>
+      <button id="latchBtn" class="latch">
+        <span class="icon">✋</span><span class="label">Take control (Space)</span>
+      </button>
+      <button id="resetBtn" class="ghost">↺ Reset</button>
+
+      <div class="slider-row">
+        <label>Speed <span class="val" id="speedVal"></span></label>
+        <input type="range" id="speedSlider" min="1" max="100" value="40" />
+      </div>
+
+      <div class="slider-row" id="bonusRow">
+        <label>Optimism bonus <span class="val" id="bonusVal"></span></label>
+        <input type="range" id="bonusSlider" min="0" max="2" step="0.05" value="1" />
+      </div>
+    </section>
+
+    <!-- ───────── metrics ───────── -->
+    <section class="metrics">
+      <div class="metric"><span class="num" id="mEpisodes">0</span><span class="cap">episodes</span></div>
+      <div class="metric"><span class="num" id="mSteps">0</span><span class="cap">env steps</span></div>
+      <div class="metric"><span class="num" id="mSuccess">0%</span><span class="cap">success rate</span></div>
+      <div class="metric"><span class="num" id="mInterv">0</span><span class="cap">interventions</span></div>
+      <div class="metric"><span class="num" id="mMaxQ">0.00</span><span class="cap">max Q (optimism)</span></div>
+    </section>
+
+    <!-- ───────── explainer ───────── -->
+    <section class="explainer">
+      <div class="card">
+        <h3>HIL</h3>
+        <p>Interventions go in the replay buffer and are trained on with the
+        plain task reward — <strong>no optimism bonus</strong>. The agent values
+        only what reaches the goal, so it learns slowly and rarely exploits your
+        help.</p>
+      </div>
+      <div class="card">
+        <h3>Q-OIL <span class="tag bad">no decoupling</span></h3>
+        <p>A single critic gets the <strong>+b bonus</strong> on intervention
+        transitions. Because it bootstraps from itself, the bonus leaks
+        <em>backward</em> into the failing pre-intervention states — watch
+        <code>max&nbsp;Q</code> blow up (over-optimism).</p>
+      </div>
+      <div class="card">
+        <h3>Q-OIL <span class="tag good">decoupled</span></h3>
+        <p>Two critics. The optimistic one gets <strong>+b</strong> but
+        <strong>bootstraps from the task critic</strong>, so the bonus stays
+        confined to intervention states: optimistic <em>guidance</em>, not
+        optimal supervision. It biases exploration toward your guidance, then
+        fades back to&nbsp;Q*.</p>
+      </div>
+    </section>
+
+    <footer class="foot">
+      Tabular Q-learning, trained live · only the maze layout is pre-loaded ·
+      no synthetic interventions — every correction is yours.
+    </footer>
+  </main>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
